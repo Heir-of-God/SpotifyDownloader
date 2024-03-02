@@ -22,7 +22,7 @@ class Track:
             for key in keys
         ]
 
-        return f"{self.__class__.__name}({', '.join([f'{k}={v}' for k, v in zip(keys, values)])})"
+        return f"{self.__class__.__name__}({', '.join([f'{k}={v}' for k, v in zip(keys, values)])})"
 
     def __str__(self) -> str:
         return f'Track {self.name} by {", ".join(self.artists)}. Album: {self.album}'
@@ -38,17 +38,21 @@ class Playlist:
         self.owner: str = (
             response_dict["owner"]["display_name"] if response_dict["owner"]["display_name"] else "Unknown_User"
         )
-        self.tracks: list[Track] = self._extract_tracks(response_dict["tracks"]["href"])
+        self.tracks: list[Track] = [
+            self._create_track(track)
+            for track in [i["track"] for i in self._extract_tracks(response_dict["tracks"]["href"])]
+            if track["track"]
+        ]
 
     def _extract_tracks(self, url: str) -> list[dict]:
         response = get(url, headers=ACCESS_HEADER)
         response = loads(response.content)
-        res = (
+        res: list[dict] = (
             response["items"]
             if not response["next"]
             else response["items"] + self._extract_tracks(response["next"])
         )
-        return [self._create_track(track) for track in [i["track"] for i in res] if track["track"]]
+        return res
 
     def _create_track(self, track: list[dict]) -> Track:
         name: str = track["name"]
@@ -87,10 +91,10 @@ class YoutubeDownloader:
 
         return result
 
-    def download_video(self, video: YouTube) -> str:
+    def download_video(self, video: YouTube, file_name: str) -> str:
         stream = video.streams.get_by_itag(251)
-        stream.download(output_path=self.path_to_save, filename=video.title + ".webm")
-        file_path = self.path_to_save + "/" + video.title
+        stream.download(output_path=self.path_to_save, filename=file_name + ".webm")
+        file_path = self.path_to_save + "/" + file_name
         subprocess.run(
             f'ffmpeg -i "{file_path}.webm" -vn -ab 128k -ar 44100 -y "{file_path}.mp3" -loglevel quiet'
         )  # remove -loglevel quiet if you want to see output from ffmpeg
@@ -107,6 +111,8 @@ class YoutubeDownloader:
         id3["TALB"] = TALB(encoding=3, text=f"{track.album}")
         id3["TIT2"] = TIT2(encoding=3, text=f"{track.name}")
         id3.save(path)
+
+    def _get_correct_name(self, track: Track):
         new_name: str = track.name
         i = 1
         if exists(self.path_to_save + f"\\{new_name}.mp3"):
@@ -114,17 +120,18 @@ class YoutubeDownloader:
         while exists(self.path_to_save + f"\\{new_name}.mp3"):
             new_name += str(i)
             i += 1
-        rename(path, self.path_to_save + "\\" + new_name + ".mp3")
+        return new_name
 
     def download_playlist(self, playlist: list[Track]):
         for track in playlist:
             youtube_obj: YouTube = self.search_for_video(track)
             if youtube_obj:
-                path_to_file: str = self.download_video(youtube_obj)
+                file_name: str = self._get_correct_name(track)
+                path_to_file = self.download_video(youtube_obj, file_name)
                 self._correct_metadata(track, path_to_file)
 
 
-searching_for = "https://open.spotify.com/playlist/6ZXl5BhSdGw4WT9u3yhxHM?si=223943e2fd454b61"
+searching_for = "https://open.spotify.com/playlist/6ZXl5BhSdGw4WT9u3yhxHM?si=efdce2f89b604431"
 p = Playlist(searching_for)
 YD = YoutubeDownloader()
 YD.download_playlist(p.get_tracks())

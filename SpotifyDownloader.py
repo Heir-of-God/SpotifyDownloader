@@ -6,6 +6,7 @@ from os import mkdir, getcwd, remove, rename
 from os.path import isdir, exists
 import subprocess
 from mutagen.id3 import ID3, TALB, TIT2, TPE1, ID3NoHeaderError
+from pytube.exceptions import AgeRestrictedError
 
 
 class Track:
@@ -107,13 +108,15 @@ class YoutubeDownloader:
             id3 = ID3(path)
         except ID3NoHeaderError:
             id3 = ID3()
-        id3["TPE1"] = TPE1(encoding=3, text=f"{' ,'.join(track.artists)}")
+        id3["TPE1"] = TPE1(encoding=3, text=f"{', '.join(track.artists)}")
         id3["TALB"] = TALB(encoding=3, text=f"{track.album}")
         id3["TIT2"] = TIT2(encoding=3, text=f"{track.name}")
         id3.save(path)
 
     def _get_correct_name(self, track: Track):
         new_name: str = track.name
+        for char in '"/\<>:|?*':  # replacing forbidden characters in windows and linux
+            new_name = new_name.replace(char, "")
         i = 1
         if exists(self.path_to_save + f"\\{new_name}.mp3"):
             new_name = f"{track.artists[0]} - {track.name}"
@@ -126,12 +129,19 @@ class YoutubeDownloader:
         for track in playlist:
             youtube_obj: YouTube = self.search_for_video(track)
             if youtube_obj:
-                file_name: str = self._get_correct_name(track)
-                path_to_file = self.download_video(youtube_obj, file_name)
-                self._correct_metadata(track, path_to_file)
+                try:
+                    file_name: str = self._get_correct_name(track)
+                    path_to_file = self.download_video(youtube_obj, file_name)
+                    self._correct_metadata(track, path_to_file)
+                except AgeRestrictedError:
+                    print(
+                        f"Sorry, can't download the song {track.name} by {track.artists[0]} due to AgeRestrictedError"
+                    )
+                except Exception as e:
+                    print(f"Encountering unknown error while downloading the track {track.name}. Error: {e}")
 
 
-searching_for = "https://open.spotify.com/playlist/6ZXl5BhSdGw4WT9u3yhxHM?si=efdce2f89b604431"
+searching_for = "https://open.spotify.com/playlist/6ZXl5BhSdGw4WT9u3yhxHM?si=220729e6975e448f"
 p = Playlist(searching_for)
 YD = YoutubeDownloader()
 YD.download_playlist(p.get_tracks())

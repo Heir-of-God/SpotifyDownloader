@@ -79,7 +79,11 @@ class YoutubeDownloader:
                 results = searching.results
             result = results.pop(0)
             searched += 1
-        print(searched)
+            if searched >= 30:  # limit there!
+                print(
+                    f"Seems like there's no this song '{track.name} {track.artists}' on Youtube, you can try to change limit in search_for_video function"
+                )
+                return None
 
         return result
 
@@ -115,8 +119,9 @@ class YoutubeDownloader:
     def download_playlist(self, playlist: list[Track]):
         for track in playlist:
             youtube_obj: YouTube = self.search_for_video(track)
-            path_to_file: str = self.download_video(youtube_obj)
-            self._correct_metadata(track, path_to_file)
+            if youtube_obj:
+                path_to_file: str = self.download_video(youtube_obj)
+                self._correct_metadata(track, path_to_file)
 
 
 searching_for = "https://open.spotify.com/playlist/6ZXl5BhSdGw4WT9u3yhxHM?si=223943e2fd454b61"

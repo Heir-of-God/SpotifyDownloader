@@ -1,12 +1,12 @@
+from tkinter import W
 from requests import Response, get
 from access import BASE_URL, ACCESS_HEADER
 from json import loads
 from pytube import Search, YouTube
-from os import mkdir, getcwd, remove, rename
+from os import mkdir, getcwd, remove
 from os.path import isdir, exists
 import subprocess
 from mutagen.id3 import ID3, TALB, TIT2, TPE1, ID3NoHeaderError
-from pytube.exceptions import AgeRestrictedError
 
 
 class Track:
@@ -72,25 +72,33 @@ class YoutubeDownloader:
         if not isdir(self.path_to_save):
             mkdir(self.path_to_save)
 
-    def search_for_video(self, track: Track, official: bool = True):
-        searching: Search = Search(f"{track.artists[0]} - {track.name}{' official audio' if official else ''}")
-        results: list[YouTube] = searching.results
-        result: YouTube = results.pop(0)
+    def search_for_video(self, track: Track) -> list[YouTube]:  # Returns up to 3 YouTube objects
+        searching: Search = Search(f"{track.artists[0]} - {track.name} audio only")
+        searching_results: list[YouTube] = searching.results
         searched = 1
+        ms_range = 2000
+        results: list[YouTube] = []
+        video_count = 0
 
-        while not (abs(result.length * 1000 - track.duration) <= 1200):
-            if not results:
+        while not (video_count != 0 and not results) and (video_count != 3):
+            if not searching_results:
                 searching.get_next_results()
-                results = searching.results
-            result = results.pop(0)
+                searching_results = searching.results
+            cur_video: YouTube = searching_results.pop(0)
+            to_add: bool = abs(cur_video.length * 1000 - track.duration) <= ms_range
+            if to_add:
+                results.append(cur_video)
+                video_count += 1
+
             searched += 1
-            if searched >= 30:  # limit there!
+            if searched == 15:
+                ms_range = 15000
+            if searched >= 40:  # limit there!
                 print(
                     f"Seems like there's no this song '{track.name} {track.artists}' on Youtube, you can try to change limit in search_for_video function"
                 )
-                return None
-
-        return result
+                return results
+        return results
 
     def download_video(self, video: YouTube, file_name: str) -> str:
         stream = video.streams.get_by_itag(251)
@@ -127,21 +135,30 @@ class YoutubeDownloader:
 
     def download_playlist(self, playlist: list[Track]):
         for track in playlist:
-            youtube_obj: YouTube = self.search_for_video(track)
-            if youtube_obj:
+            youtube_objects: list[YouTube] = self.search_for_video(track)
+            if not youtube_objects:
+                continue
+            downloaded = False
+            cur_candidate_ind = 0
+
+            while not downloaded and cur_candidate_ind != len(youtube_objects):
+                youtube_obj: YouTube = youtube_objects[cur_candidate_ind]
                 try:
                     file_name: str = self._get_correct_name(track)
                     path_to_file = self.download_video(youtube_obj, file_name)
                     self._correct_metadata(track, path_to_file)
-                except AgeRestrictedError:
-                    print(
-                        f"Sorry, can't download the song {track.name} by {track.artists[0]} due to AgeRestrictedError"
-                    )
+                    downloaded = True
                 except Exception as e:
-                    print(f"Encountering unknown error while downloading the track {track.name}. Error: {e}")
+                    print(
+                        f"Encountering unexpected error while downloading the track {track.name}. Error: {e}. Attempt: {cur_candidate_ind + 1}"
+                    )
+                cur_candidate_ind += 1
+
+            if not downloaded:
+                print(f"Sorry, can't download track {track.name} by {track.artists[0]}")
 
 
-searching_for = "https://open.spotify.com/playlist/6ZXl5BhSdGw4WT9u3yhxHM?si=220729e6975e448f"
+searching_for = "https://open.spotify.com/playlist/6ZXl5BhSdGw4WT9u3yhxHM?si=4ddffd99756742a3"
 p = Playlist(searching_for)
 YD = YoutubeDownloader()
 YD.download_playlist(p.get_tracks())

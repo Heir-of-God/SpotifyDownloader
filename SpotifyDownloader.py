@@ -24,7 +24,7 @@ class Track:
         response_dict = loads(response.content)
         name: str = response_dict["name"]
         album: str = response_dict["album"]["name"]
-        artists: list[str] = [artist["name"] for artist in response["artists"]]
+        artists: list[str] = [artist["name"] for artist in response_dict["artists"]]
         duration: int = response_dict["duration_ms"]
         return cls(name, artists, album, duration)
 
@@ -134,61 +134,65 @@ class YoutubeDownloader:
             i += 1
         return new_name
 
-    def download_video(self, video: YouTube, file_name: str) -> str:
-        stream = video.streams.get_by_itag(251)
-        stream.download(output_path=self.path_to_save, filename=file_name + ".webm")
-        file_path = self.path_to_save + "/" + file_name
-        subprocess.run(
-            f'ffmpeg -i "{file_path}.webm" -vn -ab 128k -ar 44100 -y "{file_path}.mp3" -loglevel quiet'
-        )  # remove -loglevel quiet if you want to see output from ffmpeg
-        remove(file_path + ".webm")
+    def download_track(self, videos: list[YouTube], track: Track) -> str:
+        if not videos:
+            return None
+        downloaded = False
+        cur_candidate_ind = 0
+        file_name: str = self._get_correct_name(track)
 
-        return file_path + ".mp3"
+        while not downloaded and cur_candidate_ind != len(videos):
+            youtube_obj: YouTube = videos[cur_candidate_ind]
+            try:
+                stream = youtube_obj.streams.get_by_itag(251)
+                stream.download(output_path=self.path_to_save, filename=file_name + ".webm")
+                file_path: str = self.path_to_save + "/" + file_name
+                subprocess.run(
+                    f'ffmpeg -i "{file_path}.webm" -vn -ab 128k -ar 44100 -y "{file_path}.mp3" -loglevel quiet'
+                )  # remove -loglevel quiet if you want to see output from ffmpeg
+                remove(file_path + ".webm")
+                file_path += ".mp3"
+                self._correct_metadata(track, file_path)
+                downloaded = True
+            except Exception as e:
+                print(
+                    f"Encountering unexpected error while downloading the track {track.name}. Error: {e}. Attempt: {cur_candidate_ind + 1}"
+                )
+            cur_candidate_ind += 1
+
+        if not downloaded:
+            return f"Sorry, can't download track {track.name} by {track.artists[0]}"
+        else:
+            return f"Successfully downloaded {track.name} by {track.artists[0]}"
 
     def download_playlist(self, playlist: list[Track]) -> None:
         length: int = len(playlist)
         for track_num, track in enumerate(playlist, 1):
-            youtube_objects: list[YouTube] = self.search_for_video(track)
-            if not youtube_objects:
-                continue
-            downloaded = False
-            cur_candidate_ind = 0
-
-            while not downloaded and cur_candidate_ind != len(youtube_objects):
-                youtube_obj: YouTube = youtube_objects[cur_candidate_ind]
-                try:
-                    file_name: str = self._get_correct_name(track)
-                    path_to_file = self.download_video(youtube_obj, file_name)
-                    self._correct_metadata(track, path_to_file)
-                    downloaded = True
-                except Exception as e:
-                    print(
-                        f"Encountering unexpected error while downloading the track {track.name}. Error: {e}. Attempt: {cur_candidate_ind + 1}"
-                    )
-                cur_candidate_ind += 1
-
-            if not downloaded:
-                print(
-                    f"Progress: {track_num}/{length}. "
-                    + f"Sorry, can't download track {track.name} by {track.artists[0]}"
-                )
-            else:
-                print(
-                    f"Progress: {track_num}/{length}. "
-                    + f"Successfully downloaded {track.name} by {track.artists[0]}"
-                )
+            videos: list[YouTube] = self.search_for_video(track)
+            download_output: str = self.download_track(videos, track)
+            if download_output:
+                print(f"Progress: {track_num}/{length}. " + download_output)
+        return
 
 
 if __name__ == "__main__":
     if len(console_arguments) != 2:
-        print("Write calling example:      py SpotifyDownloader.py <your playlist or song link>")
+        print("Error! Right calling example:      py SpotifyDownloader.py <your playlist or track link>")
         exit(1)
     searching_for: str = console_arguments[1]
     YD = YoutubeDownloader()
     if "track" in searching_for:
         targeted_track: Track = Track.get_track_by_url(searching_for)
         candidates: list[YouTube] = YD.search_for_video(targeted_track)
-        YD.download_video()
+        download_output: str = YD.download_track(candidates, targeted_track)
+        if download_output:
+            print(download_output)
 
     elif "playlist" in searching_for:
-        pass
+        playlist_obj: Playlist = Playlist(searching_for)
+        YD.download_playlist(playlist_obj.get_tracks())
+
+    else:
+        print("Encountered error! Your parameter must be a valid link to the PUBLIC playlist or track!")
+
+    exit(0)

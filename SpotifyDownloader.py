@@ -1,4 +1,4 @@
-from tkinter import W
+from re import T
 from requests import Response, get
 from access import BASE_URL, ACCESS_HEADER
 from json import loads
@@ -7,6 +7,7 @@ from os import mkdir, getcwd, remove
 from os.path import isdir, exists
 import subprocess
 from mutagen.id3 import ID3, TALB, TIT2, TPE1, ID3NoHeaderError
+from sys import argv as console_arguments
 
 
 class Track:
@@ -14,7 +15,18 @@ class Track:
         self.name: str = name
         self.artists: list[str] = artists
         self.album: str = album
-        self.duration: int = duration
+        self.duration: int = duration  # ms
+
+    @classmethod
+    def get_track_by_url(cls, link: str):
+        track_id = link.split("/")[-1].split("?")[0]
+        response: Response = get(BASE_URL + f"tracks/{track_id}", headers=ACCESS_HEADER)
+        response_dict = loads(response.content)
+        name: str = response_dict["name"]
+        album: str = response_dict["album"]["name"]
+        artists: list[str] = [artist["name"] for artist in response["artists"]]
+        duration: int = response_dict["duration_ms"]
+        return cls(name, artists, album, duration)
 
     def __repr__(self) -> str:
         keys = list(self.__dict__)
@@ -95,21 +107,10 @@ class YoutubeDownloader:
                 ms_range = 15000
             if searched >= 40:  # limit there!
                 print(
-                    f"Seems like there's no this song '{track.name} {track.artists}' on Youtube, you can try to change limit in search_for_video function"
+                    f"Seems like there's no this song '{track.name} {track.artists}' with this duration {track.duration}ms on Youtube, you can try to change limit in search_for_video function"
                 )
                 return results
         return results
-
-    def download_video(self, video: YouTube, file_name: str) -> str:
-        stream = video.streams.get_by_itag(251)
-        stream.download(output_path=self.path_to_save, filename=file_name + ".webm")
-        file_path = self.path_to_save + "/" + file_name
-        subprocess.run(
-            f'ffmpeg -i "{file_path}.webm" -vn -ab 128k -ar 44100 -y "{file_path}.mp3" -loglevel quiet'
-        )  # remove -loglevel quiet if you want to see output from ffmpeg
-        remove(file_path + ".webm")
-
-        return file_path + ".mp3"
 
     def _correct_metadata(self, track: Track, path: str):
         try:
@@ -133,8 +134,20 @@ class YoutubeDownloader:
             i += 1
         return new_name
 
-    def download_playlist(self, playlist: list[Track]):
-        for track in playlist:
+    def download_video(self, video: YouTube, file_name: str) -> str:
+        stream = video.streams.get_by_itag(251)
+        stream.download(output_path=self.path_to_save, filename=file_name + ".webm")
+        file_path = self.path_to_save + "/" + file_name
+        subprocess.run(
+            f'ffmpeg -i "{file_path}.webm" -vn -ab 128k -ar 44100 -y "{file_path}.mp3" -loglevel quiet'
+        )  # remove -loglevel quiet if you want to see output from ffmpeg
+        remove(file_path + ".webm")
+
+        return file_path + ".mp3"
+
+    def download_playlist(self, playlist: list[Track]) -> None:
+        length: int = len(playlist)
+        for track_num, track in enumerate(playlist, 1):
             youtube_objects: list[YouTube] = self.search_for_video(track)
             if not youtube_objects:
                 continue
@@ -155,10 +168,27 @@ class YoutubeDownloader:
                 cur_candidate_ind += 1
 
             if not downloaded:
-                print(f"Sorry, can't download track {track.name} by {track.artists[0]}")
+                print(
+                    f"Progress: {track_num}/{length}. "
+                    + f"Sorry, can't download track {track.name} by {track.artists[0]}"
+                )
+            else:
+                print(
+                    f"Progress: {track_num}/{length}. "
+                    + f"Successfully downloaded {track.name} by {track.artists[0]}"
+                )
 
 
-searching_for = "https://open.spotify.com/playlist/6ZXl5BhSdGw4WT9u3yhxHM?si=4ddffd99756742a3"
-p = Playlist(searching_for)
-YD = YoutubeDownloader()
-YD.download_playlist(p.get_tracks())
+if __name__ == "__main__":
+    if len(console_arguments) != 2:
+        print("Write calling example:      py SpotifyDownloader.py <your playlist or song link>")
+        exit(1)
+    searching_for: str = console_arguments[1]
+    YD = YoutubeDownloader()
+    if "track" in searching_for:
+        targeted_track: Track = Track.get_track_by_url(searching_for)
+        candidates: list[YouTube] = YD.search_for_video(targeted_track)
+        YD.download_video()
+
+    elif "playlist" in searching_for:
+        pass

@@ -6,16 +6,26 @@ from pytube import Search, YouTube
 from os import mkdir, getcwd, remove
 from os.path import isdir, exists
 import subprocess
-from mutagen.id3 import ID3, TALB, TIT2, TPE1, ID3NoHeaderError
+from mutagen.id3 import ID3, TALB, TIT2, TPE1, APIC, ID3NoHeaderError
 from sys import argv as console_arguments
 
 
+def get_image_binary(img_url) -> bytes:
+    response = get(img_url)
+    # if response.status_code:
+    #     output = open("output.png", "wb")
+    #     output.write(response.content)
+    #     output.close()
+    return response.content
+
+
 class Track:
-    def __init__(self, name: str, artists: list[str], album: str, duration: int) -> None:
+    def __init__(self, name: str, artists: list[str], album: str, duration: int, binary_image: bytes) -> None:
         self.name: str = name
         self.artists: list[str] = artists
         self.album: str = album
         self.duration: int = duration  # ms
+        self.binary_image: bytes = binary_image
 
     @classmethod
     def get_track_by_data(cls, data: dict):
@@ -23,7 +33,8 @@ class Track:
         album: str = data["album"]["name"]
         artists: list[str] = [artist["name"] for artist in data["artists"]]
         duration: int = data["duration_ms"]
-        return cls(name, artists, album, duration)
+        binary_image: bytes = get_image_binary(data["album"]["images"][0]["url"])
+        return cls(name, artists, album, duration, binary_image)
 
     def __repr__(self) -> str:
         keys = list(self.__dict__)
@@ -110,6 +121,7 @@ class YoutubeDownloader:
         id3["TPE1"] = TPE1(encoding=3, text=f"{', '.join(track.artists)}")
         id3["TALB"] = TALB(encoding=3, text=f"{track.album}")
         id3["TIT2"] = TIT2(encoding=3, text=f"{track.name}")
+        id3["APIC"] = APIC(encoding=3, mime="image/png", type=3, desc="Cover", data=track.binary_image)
         id3.save(path)
 
     def _get_correct_name(self, track: Track):

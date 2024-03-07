@@ -18,14 +18,11 @@ class Track:
         self.duration: int = duration  # ms
 
     @classmethod
-    def get_track_by_url(cls, link: str):
-        track_id = link.split("/")[-1].split("?")[0]
-        response: Response = get(BASE_URL + f"tracks/{track_id}", headers=ACCESS_HEADER)
-        response_dict = loads(response.content)
-        name: str = response_dict["name"]
-        album: str = response_dict["album"]["name"]
-        artists: list[str] = [artist["name"] for artist in response_dict["artists"]]
-        duration: int = response_dict["duration_ms"]
+    def get_track_by_data(cls, data: dict):
+        name: str = data["name"]
+        album: str = data["album"]["name"]
+        artists: list[str] = [artist["name"] for artist in data["artists"]]
+        duration: int = data["duration_ms"]
         return cls(name, artists, album, duration)
 
     def __repr__(self) -> str:
@@ -52,7 +49,7 @@ class Playlist:
             response_dict["owner"]["display_name"] if response_dict["owner"]["display_name"] else "Unknown_User"
         )
         self.tracks: list[Track] = [
-            self._create_track(track)
+            Track.get_track_by_data(track)
             for track in [i["track"] for i in self._extract_tracks(response_dict["tracks"]["href"])]
             if track["track"]
         ]
@@ -66,13 +63,6 @@ class Playlist:
             else response["items"] + self._extract_tracks(response["next"])
         )
         return res
-
-    def _create_track(self, track: list[dict]) -> Track:
-        name: str = track["name"]
-        album: str = track["album"]["name"]
-        artists: list[str] = [artist["name"] for artist in track["artists"]]
-        duration: int = track["duration_ms"]
-        return Track(name, artists, album, duration)
 
     def get_tracks(self) -> list[Track]:
         return self.tracks
@@ -182,9 +172,14 @@ if __name__ == "__main__":
     searching_for: str = console_arguments[1]
     YD = YoutubeDownloader()
     if "track" in searching_for:
-        targeted_track: Track = Track.get_track_by_url(searching_for)
+        track_id: str = searching_for.split("/")[-1].split("?")[0]
+        response: Response = get(BASE_URL + f"tracks/{track_id}", headers=ACCESS_HEADER)
+        response_dict = loads(response.content)
+
+        targeted_track: Track = Track.get_track_by_data(response_dict)
         candidates: list[YouTube] = YD.search_for_video(targeted_track)
         download_output: str = YD.download_track(candidates, targeted_track)
+
         if download_output:
             print(download_output)
 

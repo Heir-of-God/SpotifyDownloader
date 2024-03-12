@@ -71,13 +71,10 @@ class Playlist:
         self.description: str = response_dict["description"]
         self.owner: str = (
             response_dict["owner"]["display_name"] if response_dict["owner"]["display_name"] else "Unknown_User"
-        )
-        self.tracks: list[Track] = [
-            Track.get_track_by_data(track)
-            for track in [i["track"] for i in self._extract_tracks(response_dict["tracks"]["href"])]
-            if track["track"]
-        ]
+        )  # Unknown_user can appear when API hasn't access to user account details
+        self.tracks: list[Track] = self._extract_tracks(response_dict["tracks"]["href"])
 
+        # Cutting out the desired part
         if start_from and end_at:
             self.tracks = self.tracks[start_from - 1 : end_at]
         elif start_from:
@@ -85,7 +82,12 @@ class Playlist:
         elif end_at:
             self.tracks = self.tracks[:end_at]
 
+        self.tracks = [
+            Track.get_track_by_data(track) for track in [i["track"] for i in self.tracks] if track["track"]
+        ]  # converting all tracks in Track() objects
+
     def _extract_tracks(self, url: str) -> list[dict]:
+        """Returns all tracks from playlist via recursion"""
         response = get(url, headers=ACCESS_HEADER)
         response = loads(response.content)
         res: list[dict] = (
@@ -96,6 +98,7 @@ class Playlist:
         return res
 
     def get_tracks(self) -> list[Track]:
+        """Returns playlist's tracks"""
         return self.tracks
 
 

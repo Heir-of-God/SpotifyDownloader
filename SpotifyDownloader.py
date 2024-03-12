@@ -1,3 +1,4 @@
+from typing import Self
 from requests import Response, get
 from access import BASE_URL, ACCESS_HEADER
 from json import loads
@@ -9,25 +10,36 @@ from mutagen.id3 import ID3, TALB, TIT2, TPE1, APIC, TLEN, ID3NoHeaderError
 from argparse import ArgumentParser, Namespace
 
 
-def get_image_binary(img_url) -> bytes:
+def get_image_binary(img_url: str) -> bytes:
+    """Returns byte representation of image by its url"""
     response = get(img_url)
+    # region SavingImage
     # if response.status_code:
     #     output = open("output.png", "wb")
     #     output.write(response.content)
     #     output.close()
+    # endregion
     return response.content
 
 
+def get_spotify_id(url: str) -> str:
+    """Returns only Spotify's id from provided url"""
+    return url.split("/")[-1].split("?")[0]
+
+
 class Track:
+    """Class for representing Spotify's tracks details"""
+
     def __init__(self, name: str, artists: list[str], album: str, duration: int, binary_image: bytes) -> None:
         self.name: str = name
         self.artists: list[str] = artists
         self.album: str = album
-        self.duration: int = duration  # ms
+        self.duration: int = duration  # in milliseconds
         self.binary_image: bytes = binary_image
 
     @classmethod
-    def get_track_by_data(cls, data: dict):
+    def get_track_by_data(cls, data: dict) -> Self:
+        """Creates track from provided data (dict from Spotify API about this track)"""
         name: str = data["name"]
         album: str = data["album"]["name"]
         artists: list[str] = [artist["name"] for artist in data["artists"]]
@@ -49,21 +61,20 @@ class Track:
 
 
 class Playlist:
+    """Class for representing Spotify's playlists details (As in Spotify, playlist consists of Track()s)"""
+
     def __init__(self, link: str, start_from: int, end_at: int) -> None:
-        self.id: str = link.split("/")[-1].split("?")[0]
+        self.id: str = get_spotify_id(link)
         response: Response = get(BASE_URL + f"playlists/{self.id}", headers=ACCESS_HEADER)
         response_dict = loads(response.content)
         self.name: str = response_dict["name"]
         self.description: str = response_dict["description"]
         self.owner: str = (
             response_dict["owner"]["display_name"] if response_dict["owner"]["display_name"] else "Unknown_User"
-        )
-        self.tracks: list[Track] = [
-            Track.get_track_by_data(track)
-            for track in [i["track"] for i in self._extract_tracks(response_dict["tracks"]["href"])]
-            if track["track"]
-        ]
+        )  # Unknown_user can appear when API hasn't access to user account details
+        self.tracks: list[Track] = self._extract_tracks(response_dict["tracks"]["href"])
 
+        # Cutting out the desired part
         if start_from and end_at:
             self.tracks = self.tracks[start_from - 1 : end_at]
         elif start_from:
@@ -71,7 +82,12 @@ class Playlist:
         elif end_at:
             self.tracks = self.tracks[:end_at]
 
+        self.tracks = [
+            Track.get_track_by_data(track) for track in [i["track"] for i in self.tracks] if track["track"]
+        ]  # converting all tracks in Track() objects
+
     def _extract_tracks(self, url: str) -> list[dict]:
+        """Returns all tracks from playlist via recursion"""
         response = get(url, headers=ACCESS_HEADER)
         response = loads(response.content)
         res: list[dict] = (
@@ -82,16 +98,27 @@ class Playlist:
         return res
 
     def get_tracks(self) -> list[Track]:
+        """Returns playlist's tracks"""
         return self.tracks
 
 
 class YoutubeDownloader:
-    def __init__(self):
+    """The class responsible for downloading, searching and other work with YouTube."""
+
+    def __init__(self) -> None:
         self.path_to_save: str = getcwd() + "\\tracks"
         if not isdir(self.path_to_save):
             mkdir(self.path_to_save)
 
-    def search_for_video(self, track: Track) -> list[YouTube]:  # Returns up to 3 YouTube objects
+    def search_for_video(self, track: Track) -> list[YouTube]:  # Returns up to 3 YouTube objects in list
+        """Searching for videos on YouTube with simillar name and duration
+
+        Args:
+            track (Track): the track you want to search YouTube for
+
+        Returns:
+            list[YouTube]: list object which contains UP TO 3 YouTube objects - 1 main and 2 spares. Have chances to contain less than 3 items!
+        """
         searching: Search = Search(f"{track.artists[0]} - {track.name} audio only")
         searching_results: list[YouTube] = searching.results
         searched = 1
@@ -104,8 +131,7 @@ class YoutubeDownloader:
                 searching.get_next_results()
                 searching_results = searching.results
             cur_video: YouTube = searching_results.pop(0)
-            to_add: bool = abs(cur_video.length * 1000 - track.duration) <= ms_range
-            if to_add:
+            if abs(cur_video.length * 1000 - track.duration) <= ms_range:
                 results.append(cur_video)
                 video_count += 1
 
@@ -119,7 +145,8 @@ class YoutubeDownloader:
                 return results
         return results
 
-    def _correct_metadata(self, track: Track, path: str):
+    def _correct_metadata(self, track: Track, path: str) -> None:
+        """Helper method which helps to set right metadata after downloading a song"""
         try:
             id3 = ID3(path)
         except ID3NoHeaderError:
@@ -132,19 +159,29 @@ class YoutubeDownloader:
         id3["TLEN"] = TLEN(encoding=3, text=f"{track.duration}")
         id3.save(path)
 
-    def _get_correct_name(self, track: Track):
+    def _get_correct_name(self, track: Track) -> str:
+        """There's low chance to face conflicts with file names, but this method cares so there's no chance at all"""
         new_name: str = track.name
-        for char in '"/\<>:|?*':  # replacing forbidden characters in windows and linux
+        for char in '"/\<>:|?*':  # replacing forbidden characters for file's name in windows and linux
             new_name = new_name.replace(char, "")
-        i = 1
+        num_to_add = 1
         if exists(self.path_to_save + f"\\{new_name}.mp3"):
             new_name = f"{track.artists[0]} - {track.name}"
         while exists(self.path_to_save + f"\\{new_name}.mp3"):
-            new_name += str(i)
-            i += 1
+            new_name += str(num_to_add)
+            num_to_add += 1
         return new_name
 
     def download_track(self, videos: list[YouTube], track: Track) -> str:
+        """Method to download a single track from its YouTube instances
+
+        Args:
+            videos (list[YouTube]): up to 3 YouTube objects (up to 3 attempts to download this song)
+            track (Track): track associated with list of YouTube videos (used by helper methods to rename, correct metadata etc)
+
+        Returns:
+            str: download result message
+        """
         if not videos:
             return None
         downloaded = False
@@ -159,7 +196,7 @@ class YoutubeDownloader:
                 file_path: str = self.path_to_save + "/" + file_name
                 subprocess.run(
                     f'ffmpeg -i "{file_path}.webm" -vn -ab 128k -ar 44100 -y -map_metadata -1 "{file_path}.mp3" -loglevel quiet'
-                )  # remove -loglevel quiet if you want to see output from ffmpeg
+                )  # Using ffmpeg to convert webm file to mp3. remove -loglevel quiet if you want to see output from ffmpeg
                 remove(file_path + ".webm")
                 file_path += ".mp3"
                 self._correct_metadata(track, file_path)
@@ -176,6 +213,7 @@ class YoutubeDownloader:
             return f"Successfully downloaded {track.name} by {track.artists[0]}"
 
     def download_playlist(self, playlist: list[Track]) -> None:
+        """Separate method to download full Spotify playlist"""
         length: int = len(playlist)
         for track_num, track in enumerate(playlist, 1):
             videos: list[YouTube] = self.search_for_video(track)
@@ -187,6 +225,7 @@ class YoutubeDownloader:
 
 if __name__ == "__main__":
 
+    # region CLI interface creating
     parser = ArgumentParser()
     parser.add_argument("url", help="this parameter must be either url to your playlist or song on Spotify")
     parser.add_argument(
@@ -202,11 +241,13 @@ if __name__ == "__main__":
         help="If specified end downloading your songs in playlist after this song (1-indexed)",
     )
     args: Namespace = parser.parse_args()
+    # endregion
 
     searching_for: str = args.url
     YD = YoutubeDownloader()
+
     if "track" in searching_for:
-        track_id: str = searching_for.split("/")[-1].split("?")[0]
+        track_id: str = get_spotify_id(searching_for)
         response: Response = get(BASE_URL + f"tracks/{track_id}", headers=ACCESS_HEADER)
         response_dict = loads(response.content)
 
@@ -221,6 +262,7 @@ if __name__ == "__main__":
         start_from = args.start_at
         end_at = args.end_at
 
+        # validating parameters
         if (
             (start_from and start_from < 1)
             or (end_at and end_at < 1)

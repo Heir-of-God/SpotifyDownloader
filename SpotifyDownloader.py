@@ -103,12 +103,22 @@ class Playlist:
 
 
 class YoutubeDownloader:
-    def __init__(self):
+    """The class responsible for downloading, searching and other work with YouTube."""
+
+    def __init__(self) -> None:
         self.path_to_save: str = getcwd() + "\\tracks"
         if not isdir(self.path_to_save):
             mkdir(self.path_to_save)
 
-    def search_for_video(self, track: Track) -> list[YouTube]:  # Returns up to 3 YouTube objects
+    def search_for_video(self, track: Track) -> list[YouTube]:  # Returns up to 3 YouTube objects in list
+        """Searching for videos on YouTube with simillar name and duration
+
+        Args:
+            track (Track): the track you want to search YouTube for
+
+        Returns:
+            list[YouTube]: list object which contains UP TO 3 YouTube objects - 1 main and 2 spares. Have chances to contain less than 3 items!
+        """
         searching: Search = Search(f"{track.artists[0]} - {track.name} audio only")
         searching_results: list[YouTube] = searching.results
         searched = 1
@@ -121,8 +131,7 @@ class YoutubeDownloader:
                 searching.get_next_results()
                 searching_results = searching.results
             cur_video: YouTube = searching_results.pop(0)
-            to_add: bool = abs(cur_video.length * 1000 - track.duration) <= ms_range
-            if to_add:
+            if abs(cur_video.length * 1000 - track.duration) <= ms_range:
                 results.append(cur_video)
                 video_count += 1
 
@@ -136,7 +145,8 @@ class YoutubeDownloader:
                 return results
         return results
 
-    def _correct_metadata(self, track: Track, path: str):
+    def _correct_metadata(self, track: Track, path: str) -> None:
+        """Helper method which helps to set right metadata after downloading a song"""
         try:
             id3 = ID3(path)
         except ID3NoHeaderError:
@@ -149,19 +159,29 @@ class YoutubeDownloader:
         id3["TLEN"] = TLEN(encoding=3, text=f"{track.duration}")
         id3.save(path)
 
-    def _get_correct_name(self, track: Track):
+    def _get_correct_name(self, track: Track) -> str:
+        """There's low chance to face conflicts with file names, but this method cares so there's no chance at all"""
         new_name: str = track.name
-        for char in '"/\<>:|?*':  # replacing forbidden characters in windows and linux
+        for char in '"/\<>:|?*':  # replacing forbidden characters for file's name in windows and linux
             new_name = new_name.replace(char, "")
-        i = 1
+        num_to_add = 1
         if exists(self.path_to_save + f"\\{new_name}.mp3"):
             new_name = f"{track.artists[0]} - {track.name}"
         while exists(self.path_to_save + f"\\{new_name}.mp3"):
-            new_name += str(i)
-            i += 1
+            new_name += str(num_to_add)
+            num_to_add += 1
         return new_name
 
     def download_track(self, videos: list[YouTube], track: Track) -> str:
+        """Method to download a single track from its YouTube instances
+
+        Args:
+            videos (list[YouTube]): up to 3 YouTube objects (up to 3 attempts to download this song)
+            track (Track): track associated with list of YouTube videos (used by helper methods to rename, correct metadata etc)
+
+        Returns:
+            str: download result message
+        """
         if not videos:
             return None
         downloaded = False
@@ -176,7 +196,7 @@ class YoutubeDownloader:
                 file_path: str = self.path_to_save + "/" + file_name
                 subprocess.run(
                     f'ffmpeg -i "{file_path}.webm" -vn -ab 128k -ar 44100 -y -map_metadata -1 "{file_path}.mp3" -loglevel quiet'
-                )  # remove -loglevel quiet if you want to see output from ffmpeg
+                )  # Using ffmpeg to convert webm file to mp3. remove -loglevel quiet if you want to see output from ffmpeg
                 remove(file_path + ".webm")
                 file_path += ".mp3"
                 self._correct_metadata(track, file_path)
@@ -193,6 +213,7 @@ class YoutubeDownloader:
             return f"Successfully downloaded {track.name} by {track.artists[0]}"
 
     def download_playlist(self, playlist: list[Track]) -> None:
+        """Separate method to download full Spotify playlist"""
         length: int = len(playlist)
         for track_num, track in enumerate(playlist, 1):
             videos: list[YouTube] = self.search_for_video(track)
@@ -204,6 +225,7 @@ class YoutubeDownloader:
 
 if __name__ == "__main__":
 
+    # region CLI interface creating
     parser = ArgumentParser()
     parser.add_argument("url", help="this parameter must be either url to your playlist or song on Spotify")
     parser.add_argument(
@@ -219,9 +241,11 @@ if __name__ == "__main__":
         help="If specified end downloading your songs in playlist after this song (1-indexed)",
     )
     args: Namespace = parser.parse_args()
+    # endregion
 
     searching_for: str = args.url
     YD = YoutubeDownloader()
+
     if "track" in searching_for:
         track_id: str = get_spotify_id(searching_for)
         response: Response = get(BASE_URL + f"tracks/{track_id}", headers=ACCESS_HEADER)

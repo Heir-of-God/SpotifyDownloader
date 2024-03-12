@@ -1,3 +1,4 @@
+from typing import Self
 from requests import Response, get
 from access import BASE_URL, ACCESS_HEADER
 from json import loads
@@ -9,25 +10,36 @@ from mutagen.id3 import ID3, TALB, TIT2, TPE1, APIC, TLEN, ID3NoHeaderError
 from argparse import ArgumentParser, Namespace
 
 
-def get_image_binary(img_url) -> bytes:
+def get_image_binary(img_url: str) -> bytes:
+    """Returns byte representation of image by its url"""
     response = get(img_url)
+    # region SavingImage
     # if response.status_code:
     #     output = open("output.png", "wb")
     #     output.write(response.content)
     #     output.close()
+    # endregion
     return response.content
 
 
+def get_spotify_id(url: str) -> str:
+    """Returns only Spotify's id from provided url"""
+    return url.split("/")[-1].split("?")[0]
+
+
 class Track:
+    """Class for representing Spotify's tracks details"""
+
     def __init__(self, name: str, artists: list[str], album: str, duration: int, binary_image: bytes) -> None:
         self.name: str = name
         self.artists: list[str] = artists
         self.album: str = album
-        self.duration: int = duration  # ms
+        self.duration: int = duration  # in milliseconds
         self.binary_image: bytes = binary_image
 
     @classmethod
-    def get_track_by_data(cls, data: dict):
+    def get_track_by_data(cls, data: dict) -> Self:
+        """Creates track from provided data (dict from Spotify API about this track)"""
         name: str = data["name"]
         album: str = data["album"]["name"]
         artists: list[str] = [artist["name"] for artist in data["artists"]]
@@ -49,8 +61,10 @@ class Track:
 
 
 class Playlist:
+    """Class for representing Spotify's playlists details (As in Spotify, playlist consists of Track()s)"""
+
     def __init__(self, link: str, start_from: int, end_at: int) -> None:
-        self.id: str = link.split("/")[-1].split("?")[0]
+        self.id: str = get_spotify_id(link)
         response: Response = get(BASE_URL + f"playlists/{self.id}", headers=ACCESS_HEADER)
         response_dict = loads(response.content)
         self.name: str = response_dict["name"]
@@ -206,7 +220,7 @@ if __name__ == "__main__":
     searching_for: str = args.url
     YD = YoutubeDownloader()
     if "track" in searching_for:
-        track_id: str = searching_for.split("/")[-1].split("?")[0]
+        track_id: str = get_spotify_id(searching_for)
         response: Response = get(BASE_URL + f"tracks/{track_id}", headers=ACCESS_HEADER)
         response_dict = loads(response.content)
 

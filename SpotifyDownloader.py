@@ -262,6 +262,7 @@ if __name__ == "__main__":
         start_from = args.start_at
         end_at = args.end_at
 
+        # validating parameters
         if (
             (start_from and start_from < 1)
             or (end_at and end_at < 1)

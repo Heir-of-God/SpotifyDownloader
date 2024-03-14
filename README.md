@@ -3,7 +3,7 @@
 Welcome to this repository! My program allows you to download playlists and songs from Spotify absolutely free (you don’t need Spotify premium to use the program, it doesn’t even need to know anything about your personal account, to be honest).
 
 ### Preview:
-<img src="screenshots/preview.png" alt="Preview" width="75%"/>
+<img src="screenshots/preview.png" alt="Preview" width="100%"/>
 
 ## Features
 

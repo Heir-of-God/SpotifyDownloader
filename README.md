@@ -52,7 +52,11 @@ Follow these steps to set up the SpotifyDownloader on your local machine:
      - `CLIENT_ID`: Copy there your client_id from Spotify API
      - `CLIENT_SECRET`: Copy there your client_secret from Spotify API
 
-6. **VERY IMPORTANT**: \
+6. **Setting up ffmpeg**: \
+    To convert .webm files from PyTube to .mp3 files my program uses ffmpeg, so you need to install it and add it to PATH variable.
+    ##### There is the guide how to install ffmpeg correctly: [Installation guide](https://phoenixnap.com/kb/ffmpeg-windows).
+
+7. **VERY IMPORTANT**: \
     If you want program to work correctly you will need to change PyTube's source code a bit. I'm sorry, I have nothing to do with it and have struggled to fix their "bugs" as I could.
     1. You need to add some lines of code in search.py. Add this at line 151:
     ```python

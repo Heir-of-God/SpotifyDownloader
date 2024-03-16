@@ -38,6 +38,7 @@ Follow these steps to set up the SpotifyDownloader on your local machine:
 3. **Install dependencies**:
 
    ```bash
+   cd SpotifyDownloader
    pip install -r requirements.txt
    ```
 4. **Create Spotify API**: \
